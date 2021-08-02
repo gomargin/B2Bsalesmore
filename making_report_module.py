@@ -15,7 +15,6 @@ def reporting(idx, datetime, line_no, date_start, date_end):
     # db state 0 -> 1로 update
     curs.execute('UPDATE report SET state="{}" WHERE idx="{}"'.format(1, idx))
     db_connect.commit()
-    print('report 생성 중...\n')
 
     try:
         url = making_report(datetime, line_no, date_start, date_end)   # 수정
@@ -26,7 +25,7 @@ def reporting(idx, datetime, line_no, date_start, date_end):
         db_connect.close()
 
     except:
-        url = making_report(datetime, line_no, date_start, date_end)   # 수정
+        # url = making_report(datetime, line_no, date_start, date_end)   # 수정
         print('report 생성 오류: {}'.format(url))   # 수정
 
         curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, 'error', idx))
@@ -49,9 +48,9 @@ if __name__ == '__main__':
         for row in rows:
             # row[6] ==0 이면 reporting 실행
             if row[6] == 0:
-                print('report 생성 요청')
                 my_thread = Thread(target=reporting, args=(row[0], row[2], row[3], row[4], row[5],))
                 my_thread.start()
+                print('report 생성 요청')
                 break
             else:
                 pass

@@ -191,6 +191,8 @@ class Train():
 
 def making_report(datetimes, line_no, date_start, date_end):
 
+    print('report 생성 시작...\n')
+
     line_num = line_no.replace('-', '')
 
     # Zabbix 클래스 개체 'zabbix' 생성
@@ -358,23 +360,24 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # interface = '%' + neoss_df['interface'][0] + '%'   # 수정: df_neoss -> neoss_df
     # 정규식 표현. 괄호 안의 문자열 포함 및 뒤에 숫자 제외.
-    in_interface = '(\\In.+' + neoss_df['interface'][0] + ')+[^0-9]'
-    out_interface = '(\\Out.+' + neoss_df['interface'][0] + ')+[^0-9]'
+    interface = neoss_df['interface'][0]
+    in_interface = '(\\In.+' + interface + ')+[^0-9]'
+    out_interface = '(\\Out.+' + interface + ')+[^0-9]'
     interface_list = [in_interface, out_interface]
     print('----- interface_list -----')
+    print('interface: {}'.format(interface))
     print(interface_list, '\n')
 
     itemid_list = []
     for interface in interface_list:
         sql_command = 'SELECT itemid FROM items WHERE hostid="{}" and key_ REGEXP "{}"'.format(str(hostid), interface)
         itemid = zabbix.read_one(sql_command)   # tuple 형식의 itemid
-        itemid = itemid[0]
-        print('itemid: {}'.format(itemid), '\n')
+        print('itemid: {}'.format(itemid[0]), '\n')
         if itemid == None:
             print('itemid를 찾을 수 없습니다.')
             sys.exit()
         else:
-            itemid_list.append(itemid)   # [0]: in_itemid, [1]: out_itemid
+            itemid_list.append(itemid[0])   # [0]: in_itemid, [1]: out_itemid
 
     print('----- itemid list -----')
     print(itemid_list, '\n')
@@ -480,7 +483,7 @@ def making_report(datetimes, line_no, date_start, date_end):
                          'and "{}" <= from_unixtime(clock) AND from_unixtime(clock) <= "{}"'\
                         .format(itemid, date_start, date_end)
         traffic_df = zabbix.read_db(sql_command)
-        traffic_df.columns = ['itemid', 'clock', 'value']
+        traffic_df.columns = ['itemid', 'clock', 'traffic']
         real_traffic_list.append(traffic_df)
     in_real_traffic_df = real_traffic_list[0]
     out_real_traffic_df = real_traffic_list[1]
@@ -496,7 +499,7 @@ def making_report(datetimes, line_no, date_start, date_end):
     over_count = np.zeros((2, 6), dtype='int')
 
     for index, df in enumerate(real_traffic_list):
-        for value in df['value']:
+        for value in df['traffic']:
             try:
                 if int(value) > int(offer_speed):
                     over_count[index, 0] += 1
@@ -657,21 +660,21 @@ def making_report(datetimes, line_no, date_start, date_end):
     data1_6 = date_end
     data1_7 = dates[0]
     data1_8 = dates[-1]
-    data1_9 = str(int(in_real_traffic_df['value'].max()/pow(10, 6))) + 'M / ' + str(int(out_real_traffic_df['value'].max()/pow(10, 6))) + 'M'
-    data1_10 = format((in_real_traffic_df['value'].max()/offer_speed)*100, '.1f') + '% / ' + format((out_real_traffic_df['value'].max()/offer_speed)*100, '.1f') + '%'
+    data1_9 = str(int(in_real_traffic_df['traffic'].max()/pow(10, 6))) + 'M / ' + str(int(out_real_traffic_df['traffic'].max()/pow(10, 6))) + 'M'
+    data1_10 = format((in_real_traffic_df['traffic'].max()/offer_speed)*100, '.1f') + '% / ' + format((out_real_traffic_df['traffic'].max()/offer_speed)*100, '.1f') + '%'
     data1_11 = str(int(in_pred_traffic_df['traffic'].max()/pow(10, 6))) + 'M / ' + str(int(out_pred_traffic_df['traffic'].max()/pow(10, 6))) + 'M'
     data1_12 = format((in_pred_traffic_df['traffic'].max()/offer_speed)*100, '.1f') + '% / ' + format((out_pred_traffic_df['traffic'].max()/offer_speed)*100, '.1f') + '%'
 
     # 약정만료 기한 표시
     contract_end = bidw_df['contract_end'][0]
-    contract_end = datetime.datetime.strptime(contract_end, '%Y%m') + relativedelta(months=1) - datetime.timedelta(days=1)
+    contract_ends = datetime.datetime.strptime(contract_end, '%Y%m') + relativedelta(months=1) - datetime.timedelta(days=1)
     now = datetime.datetime.strptime(datetimes, '%Y-%m-%d-%H%M%S')
 
     data2_1 = bidw_df['service_name'][0]
     # data2_2 = bidw_df['contract_speed'][0]   청약속도
     data2_3 = str(offer_speed_M) + 'M'
-    if contract_end > now:
-        data2_4 = bidw_df['contract_end'][0][:4] + '년 ' +  bidw_df['contract_end'][0][4:] + '월'
+    if contract_ends > now:
+        data2_4 = contract_end[:4] + '년 ' +  contract_end[4:] + '월'
     else:
         data2_4 = '-'
     data2_5 = str(ethernet_ip_24)
@@ -703,6 +706,14 @@ def making_report(datetimes, line_no, date_start, date_end):
     data2_30 = script2_30
     data2_31 = industry
     data2_32 = str(ethernet_ip_30)
+    data2_33 = '2_33'
+    data2_34 = '2_34'
+    data2_35 = '2_35'
+    data2_36 = '2_36'
+    data2_37 = '2_37'
+    data2_38 = '2_38'
+    data2_39 = '2_39'
+    data2_40 = '2_40'
 
     # ppt 파일 불러오기
     prs = Presentation('Sales_More_ppt2.2.pptx')
@@ -799,22 +810,22 @@ def making_report(datetimes, line_no, date_start, date_end):
     plt.figure(figsize=fig)
 
     plt.title('M', loc="left", fontsize="10")
-    plt.plot(in_real_traffic_df['value']/pow(10, 6), linestyle='-.', linewidth=1, color='blue', label='Up')
-    plt.plot(out_real_traffic_df['value']/pow(10, 6), linestyle=':', linewidth=1, color='red', label='Down')
+    plt.plot(in_real_traffic_df['traffic']/pow(10, 6), linestyle='-.', linewidth=1, color='blue', label='Up')
+    plt.plot(out_real_traffic_df['traffic']/pow(10, 6), linestyle=':', linewidth=1, color='red', label='Down')
     plt.legend(loc='upper right')
 
     xticks_value = [i for i in range(0, len(in_real_traffic_df), (len(in_real_traffic_df) // 10))]
     xticks = [in_real_traffic_df['clock'][i].strftime('%Y%m%d%H%M')[2:8] for i in xticks_value]
     plt.xticks(xticks_value, xticks, rotation=45, fontsize=12)
 
-    y_lim = max(max(in_real_traffic_df['value']), max(out_real_traffic_df['value'])) * 1.2
+    y_lim = max(max(in_real_traffic_df['traffic']), max(out_real_traffic_df['traffic'])) * 1.2
     plt.ylim(0, y_lim / pow(10, 6))
 
-    if int(offer_speed) * 0.7 <= max(out_real_traffic_df['value']) * 1.2 < int(offer_speed):
+    if int(offer_speed) * 0.7 <= max(out_real_traffic_df['traffic']) * 1.2 < int(offer_speed):
         plt.axhline(y=int(offer_speed_M * 0.7), color='orange', linewidth=1, linestyle='--')
         plt.text(0, int(offer_speed_M * 0.7), "권고속도 : " + str(int(offer_speed_M * 0.7)) + 'M', fontsize=10, fontproperties=fontprop1)
         # plt.text(0, int(offer_speed_M * 0.7), "권고속도 : " + str(int(offer_speed_M * 0.7)) + 'M', fontsize=10)
-    elif int(offer_speed) <= max(out_real_traffic_df['value']) * 1.2:
+    elif int(offer_speed) <= max(out_real_traffic_df['traffic']) * 1.2:
         plt.axhline(y=offer_speed_M, color='red', linewidth=1, linestyle='--')
         plt.text(0, offer_speed_M, "제공속도 : " + str(offer_speed_M) + 'M', fontsize=10, fontproperties=fontprop1)
         # plt.text(0, offer_speed_M, "제공속도 : " + str(offer_speed_M) + 'M', fontsize=10)
@@ -856,11 +867,11 @@ def making_report(datetimes, line_no, date_start, date_end):
 
         plt.ylim(0, y_lim / pow(10, 6))   # 예측 그래프의 y축 limit은 실제 그래프와 동일
 
-        if int(offer_speed) * 0.7 <= max(out_real_traffic_df['value']) * 1.2 < int(offer_speed):
+        if int(offer_speed) * 0.7 <= max(out_real_traffic_df['traffic']) * 1.2 < int(offer_speed):
             plt.axhline(y=int(offer_speed_M * 0.7), color='orange', linewidth=1, linestyle='--')
             plt.text(0, int(offer_speed_M * 0.7), "권고속도 : " + str(int(offer_speed_M * 0.7)) + 'M', fontsize=10, fontproperties=fontprop1)
             # plt.text(0, int(offer_speed_M * 0.7), "권고속도 : " + str(int(offer_speed_M * 0.7)) + 'M', fontsize=10)
-        elif int(offer_speed) <= max(out_real_traffic_df['value']) * 1.2:
+        elif int(offer_speed) <= max(out_real_traffic_df['traffic']) * 1.2:
             plt.axhline(y=offer_speed_M, color='red', linewidth=1, linestyle='--')
             plt.text(0, offer_speed_M, "제공속도 : " + str(offer_speed_M) + 'M', fontsize=10, fontproperties=fontprop1)
             # plt.text(0, offer_speed_M, "제공속도 : " + str(offer_speed_M) + 'M', fontsize=10)
@@ -947,6 +958,22 @@ def making_report(datetimes, line_no, date_start, date_end):
     page2_31_frame.text = data2_31
     page2_32_frame = shapes.placeholders[77].text_frame
     page2_32_frame.text = data2_32
+    page2_33_frame = shapes.placeholders[78].text_frame
+    page2_33_frame.text = data2_33
+    page2_34_frame = shapes.placeholders[79].text_frame
+    page2_34_frame.text = data2_34
+    page2_35_frame = shapes.placeholders[80].text_frame
+    page2_35_frame.text = data2_35
+    page2_36_frame = shapes.placeholders[81].text_frame
+    page2_36_frame.text = data2_36
+    page2_37_frame = shapes.placeholders[82].text_frame
+    page2_37_frame.text = data2_37
+    page2_38_frame = shapes.placeholders[83].text_frame
+    page2_38_frame.text = data2_38
+    page2_39_frame = shapes.placeholders[84].text_frame
+    page2_39_frame.text = data2_39
+    page2_40_frame = shapes.placeholders[85].text_frame
+    page2_40_frame.text = data2_40
 
 
     ##### 서비스 중단 여부 동그라미 #####
@@ -1038,15 +1065,15 @@ def making_report(datetimes, line_no, date_start, date_end):
     pic = shapes.add_picture(image_stream_types, left, top, width, height)
     plt.close()
 
-    img_path = './images/img.png'
-
-    left = Inches(5.55)
-    top = Inches(1.5)
-    pic = slide.shapes.add_picture(img_path, left, top)
+    # img_path = './images/img.png'
+    #
+    # left = Inches(5.55)
+    # top = Inches(1.5)
+    # pic = slide.shapes.add_picture(img_path, left, top)
 
     ############추가 페이지##########
 
-    if int(max(traffic_df['value'])) >= int(offer_speed*0.7):
+    if int(max(traffic_df['traffic'])) >= int(offer_speed*0.7):
         slide_layout = prs.slide_layouts[4]
         slide = prs.slides.add_slide(slide_layout)
         shapes = slide.shapes
