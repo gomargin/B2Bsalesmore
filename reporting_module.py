@@ -7,6 +7,7 @@ import matplotlib.font_manager as fm
 import sys
 import os
 import io
+import re
 import pymysql
 import pandas as pd
 import numpy as np
@@ -357,30 +358,62 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # itemid 추출
-
-    # interface = '%' + neoss_df['interface'][0] + '%'   # 수정: df_neoss -> neoss_df
-    # 정규식 표현. 괄호 안의 문자열 포함 및 뒤에 숫자 제외.
     interface = neoss_df['interface'][0]
-    in_interface = '(\\In.+' + interface + ')+[^0-9]'
-    out_interface = '(\\Out.+' + interface + ')+[^0-9]'
-    interface_list = [in_interface, out_interface]
-    print('----- interface_list -----')
     print('interface: {}'.format(interface))
-    print(interface_list, '\n')
+    # key_값 검색을 위한 정규식 표현 생성
+    regexp_list= []
+    # 1. 대다수의 일반적인 interface
+    regexp_list.append('.+(' + interface + ')[^0-9]')
+    # 2. interface 에 ifHC~ 포함된 경우
+    if ('ifHCInOctets' in interface) or ('ifHCOutOctets' in interface):
+        regexp_list.append('.+(' + interface[interface.find('[')+1:-1] + ')[^0-9]')
+    # 3. 'ge3/1/19, IPinterface' 에서 숫자를 추출해야 하는 경우
+    try:
+        p = re.compile('[0-9]+(/)[0-9]+(/)[0-9]+')
+        interface_num = p.search(interface).group()
+        regexp_list.append('.+(' + interface_num + ')[^0-9]')
+    except AttributeError:
+        pass
 
-    itemid_list = []
-    for interface in interface_list:
-        sql_command = 'SELECT itemid FROM items WHERE hostid="{}" and key_ REGEXP "{}"'.format(str(hostid), interface)
-        itemid = zabbix.read_one(sql_command)   # tuple 형식의 itemid
-        print('itemid: {}'.format(itemid[0]), '\n')
-        if itemid == None:
-            print('itemid를 찾을 수 없습니다.')
-            sys.exit()
+    print('regexp_list: {}'.format(regexp_list))
+    for regexp in regexp_list:
+        sql_command = 'SELECT itemid, key_ FROM items WHERE hostid="{}" and key_ REGEXP "{}"'.format(str(hostid), regexp)
+        itemid_df = zabbix.read_db(sql_command)
+        if not itemid_df.empty:
+            itemid_df.columns = ['itemid', 'key_']
+            if 'In' in itemid_df['key_'][0]:
+                in_itemid, out_itemid = itemid_df['itemid']
+            else:
+                out_itemid, in_itemid = itemid_df['itemid']
+            itemid_list = [in_itemid, out_itemid]
+            print('in_itemid: {}, out_itemid: {}'.format(in_itemid, out_itemid))
+            break
         else:
-            itemid_list.append(itemid[0])   # [0]: in_itemid, [1]: out_itemid
+            print('regexp: {} 로 itemid를 찾을 수 없습니다.')
+            sys.exit()
 
-    print('----- itemid list -----')
-    print(itemid_list, '\n')
+
+    # interface = neoss_df['interface'][0]
+    # print('interface: {}'.format(interface))
+    # in_interface = '(\\In.+' + interface + ')+[^0-9]'
+    # out_interface = '(\\Out.+' + interface + ')+[^0-9]'
+    # interface_list = [in_interface, out_interface]
+    # print('----- interface_list -----')
+    # print(interface_list, '\n')
+    #
+    # itemid_list = []
+    # for interface in interface_list:
+    #     sql_command = 'SELECT itemid FROM items WHERE hostid="{}" and key_ REGEXP "{}"'.format(str(hostid), interface)
+    #     itemid = zabbix.read_one(sql_command)   # tuple 형식의 itemid
+    #     print('itemid: {}'.format(itemid[0]), '\n')
+    #     if itemid == None:
+    #         print('itemid를 찾을 수 없습니다.')
+    #         sys.exit()
+    #     else:
+    #         itemid_list.append(itemid[0])   # [0]: in_itemid, [1]: out_itemid
+    #
+    # print('----- itemid list -----')
+    # print(itemid_list, '\n')
 
 
     # 제공속도와 청약속도 추출
@@ -1071,7 +1104,8 @@ def making_report(datetimes, line_no, date_start, date_end):
     # top = Inches(1.5)
     # pic = slide.shapes.add_picture(img_path, left, top)
 
-    ############추가 페이지##########
+
+    # 추가 페이지
 
     if int(max(traffic_df['traffic'])) >= int(offer_speed*0.7):
         slide_layout = prs.slide_layouts[4]

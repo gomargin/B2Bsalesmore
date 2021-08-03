@@ -25,9 +25,7 @@ def reporting(idx, datetime, line_no, date_start, date_end):
         db_connect.close()
 
     except:
-        # url = making_report(datetime, line_no, date_start, date_end)   # 수정
-        print('report 생성 오류: {}'.format(url))   # 수정
-
+        print('report 생성 오류 발생!')   # 수정
         curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, 'error', idx))
         db_connect.commit()
         db_connect.close()
