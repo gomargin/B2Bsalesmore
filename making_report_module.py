@@ -18,17 +18,24 @@ def reporting(idx, datetime, line_no, date_start, date_end):
 
     try:
         url = making_report(datetime, line_no, date_start, date_end)   # 수정
-        print('report 생성 완료: {}'.format(url))   # 수정
+        if '-' in url:
+            state = 2
+            print('report 생성 완료: {}'.format(url),'\n')  # 수정
+        else:
+            state = 9
+            print(url,'\n')
 
-        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(2, str(url), idx))
+        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(state, str(url), idx))
         db_connect.commit()
         db_connect.close()
+
 
     except:
-        print('report 생성 오류 발생!')   # 수정
-        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, 'error', idx))
+        error_message = '식별되지 않은 error'
+        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, error_message, idx))
         db_connect.commit()
         db_connect.close()
+        print('report 생성 오류 발생!')  # 수정
 
 
 if __name__ == '__main__':

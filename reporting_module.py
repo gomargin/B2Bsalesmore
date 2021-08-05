@@ -8,52 +8,19 @@ import sys
 import os
 import io
 import re
-import pymysql
 import pandas as pd
 import numpy as np
 import datetime
 
+from zabbix import Zabbix
+from model import Scaler, Train
+from model import reframe_df
+
 from dateutil import rrule
 from matplotlib import pyplot as plt
-from tensorflow.python.keras.models import Sequential, load_model
-from tensorflow.python.keras.layers import Dense, LSTM, Dropout
-from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint
+
 # tensorflow WARNING 제거
 # tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
-
-class Zabbix():
-    def __init__(self, user, passwd, host, db, port, charset):
-        self.db_connect = pymysql.connect(user=user, passwd=passwd, host=host, db=db, port=port, charset=charset)
-        self.curs = self.db_connect.cursor()
-
-    def read_db(self, sql_command):
-        self.curs.execute(sql_command)
-        df = pd.DataFrame(self.curs.fetchall())
-        return df
-
-    def read_one(self, sql_command):
-        self.curs.execute(sql_command)
-        one = self.curs.fetchone()
-        return one
-
-    def manipulate_db(self, sql_command):
-        self.curs.execute(sql_command)
-        self.db_connect.commit()
-
-# def read_db(itemid):
-#     """
-#     :param: itemid (history_uint 테이블)
-#     :return: df (columns: itemid, datetime, traffic)
-#     """
-#     db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='ZABBIXDB', port=3306,
-#                                charset='euckr')
-#     curs = db_connect.cursor(pymysql.cursors.DictCursor)
-#     sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic FROM history_uint WHERE itemid IN ({})".format(itemid)
-#     curs.execute(sql_command)
-#     df = pd.DataFrame(curs.fetchall())
-#
-#     return df
 
 
 def read_db_thread(itemid, table_name):
@@ -80,120 +47,9 @@ def read_db_thread(itemid, table_name):
     print('table_name: {}'.format(table_name))
 
 
-def insert_db(df):
-    """
-    예측값 zabbix db에 업로드
-    """
-    db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='ZABBIXDB', port=3306,
-                                 charset='euckr')
-    curs = db_connect.cursor(pymysql.cursors.DictCursor)
-    for row in range(len(df)):
-        sql_command = "INSERT INTO test_ys (itemid, dates, traffic) VALUES ('{}', '{}', '{}')".format(df.iloc[row][0],
-                                                                                                        df.iloc[row][1],
-                                                                                                        df.iloc[row][2])
-        curs.execute(sql_command)
-        db_connect.commit()
-
-
-def delete_db(itemid):
-    """
-    zabbix db 업로드 전 해당 itemid row 삭제
-    """
-    db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='ZABBIXDB', port=3306,
-                                 charset='euckr')
-    curs = db_connect.cursor(pymysql.cursors.DictCursor)
-    sql_command = "DELETE FROM test_ys WHERE itemid='{}'".format(itemid)
-    curs.execute(sql_command)
-    db_connect.commit()
-
-
-def reframe_df(df):
-    """
-    :param db에서 로드한 데이터프레임
-    :return: 재구성한 데이터프레임(index: date, column: 'dt2sin', 'traffic')
-    """
-    week2sec = 7 * 24 * 60 * 60   # 일주일을 초 단위로 변환
-    dt2ts = df['datetime'].map(datetime.datetime.timestamp)   # datetime to timestamp
-    df['dt2sin'] = np.sin(dt2ts*(2*np.pi/week2sec))   # datetime to sin
-    df['date'] = df['datetime'].dt.date   # date column 추가
-    df.drop(['itemid', 'datetime'], axis=1, inplace=True)
-    df = df[['date', 'dt2sin', 'traffic']]
-    dp_df = df.groupby(['date'], as_index=True).max()   # day peak dataframe
-    dp_df = dp_df.dropna()
-    return dp_df
-
-
-class Scaler():
-    def __init__(self, df, feature):
-        self.df = df
-        self.feature = feature
-        self.max = max(self.df[self.feature])
-        self.min = min(self.df[self.feature])
-
-    def normalization(self):
-        self.df[self.feature] = list((self.df[self.feature]-self.min)/(self.max-self.min))
-        return self.df
-
-    def rev_normalization(self, array):
-        pred_array = array*(self.max-self.min)+self.min
-        return pred_array
-
-
-class Train():
-    def __init__(self, itemid, in_steps, out_steps, valid_per, epochs, batch_size, unit, drop_per):
-        self.itemid = itemid
-        self.in_steps = in_steps
-        self.out_steps = out_steps
-        self.valid_per = valid_per
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self.unit = unit
-        self.drop_per = drop_per
-
-    def split_data(self, df):
-        train_x = []
-        train_y = []
-        for i in range(len(df) - (self.in_steps + self.out_steps)):
-            train_x.append(df.values[i: i + self.in_steps, :])
-            train_y.append(df.values[i + self.in_steps: i + (self.in_steps + self.out_steps), -1])
-        train_x, train_y = np.array(train_x), np.array(train_y)
-
-        return train_x, train_y
-
-    def generate_lstm(self, data):
-        # data -> train_x
-        model = Sequential([
-            LSTM(self.unit, return_sequences=True, input_shape=(data.shape[1], data.shape[2])),
-            Dropout(self.drop_per),
-            LSTM(self.unit, return_sequences=False),
-            Dropout(self.drop_per),
-            Dense(self.out_steps)
-        ])
-        model.compile(optimizer='rmsprop', loss='mean_squared_error')
-        return model
-
-    def predict(self, df):
-        train_x, train_y = self.split_data(df)
-        model = self.generate_lstm(train_x)
-        # verbose 1: 언제 training 멈추었는지 확인 가능
-        early_stopping = EarlyStopping(monitor='loss', mode='min', patience=10, verbose=1)
-        model_name = '{}.h5'.format(self.itemid)
-        model_path = os.getcwd() + '/models/' + model_name
-        model_check = ModelCheckpoint(filepath=model_path, monitor='loss', mode='min', save_best_only=True)
-        # verbose 0: silence, 1: progress bar, 2: one line per each
-        hist = model.fit(train_x, train_y, self.batch_size, self.epochs, validation_split=self.valid_per,
-                         callbacks=[early_stopping, model_check], verbose=0)
-        test_data = df.values[-self.in_steps:]
-        test_x = test_data.reshape(1, self.in_steps, df.shape[1])
-        # model = load_model('./models/{}.h5'.format(self.itemid))
-        prediction = model.predict(test_x)
-        return prediction
-
-
 def making_report(datetimes, line_no, date_start, date_end):
 
-    print('report 생성 시작...\n')
-
+    print('회선번호: {} report 생성 시작...\n'.format(line_no))
     line_num = line_no.replace('-', '')
 
     # Zabbix 클래스 개체 'zabbix' 생성
@@ -207,12 +63,17 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # neoss table 에서 데이터 가져오기
-    sql_command = 'SELECT service_id, host_name, interface, ethernet_ip FROM neoss WHERE leased_line_num="{}"'.format(line_num)
-    neoss_df = zabbix.read_db(sql_command)
-    neoss_df.columns = ['service_id', 'host_name', 'interface', 'ethernet_ip']
-
-    print('----- neoss_df -----')
-    print(neoss_df, '\n')
+    table_name = 'neoss'
+    sql_command = 'SELECT service_id, host_name, interface, ethernet_ip FROM {} WHERE leased_line_num="{}"'.format(
+        table_name, line_num)
+    neoss_df = zabbix.read_db(sql_command, table_name)
+    if not neoss_df.empty:
+        neoss_df.columns = ['service_id', 'host_name', 'interface', 'ethernet_ip']
+        print('----- neoss_df -----')
+        print(neoss_df, '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
 
 
     # neoss_df 에서 ip 데이터 뽑기. ppt #3  'ip 할당 현황' 데이터
@@ -226,7 +87,9 @@ def making_report(datetimes, line_no, date_start, date_end):
             ip_count[ip_end - 24] += 1   # ip 마지막 두 자리 정수 변환. 24 -> 256, 25 -> 128, 24 -> 64 ...
             total_ip += pow(2, 32 - ip_end)
         except:
-            pass
+            error_message = 'ethernet_ip 값 error'
+            return error_message
+
     ethernet_ip_24 = ip_count[0]
     ethernet_ip_25 = ip_count[1]
     ethernet_ip_26 = ip_count[2]
@@ -241,27 +104,38 @@ def making_report(datetimes, line_no, date_start, date_end):
             start_ip = int(ethernet_ip[i].split('.')[-1].split('/')[0])
             ip_num = pow(2, 32-int(ethernet_ip[i][-2:]))
             ethernet_ip_list[i] = ethernet_ip[i][:-3] + '~' + str(start_ip + ip_num - 1)
-        if i >= 8:
+        else:
             break
 
     # neoss_df 에서 service_id 값 뽑기
     service_id = neoss_df['service_id'][0]
 
     # bidw table 에서 데이터 가져오기
-    sql_command = 'SELECT industry_2, customer_name, contract_speed, service_name, contract_end FROM bidw WHERE ' \
-                     'service_id="{}"'.format(service_id)
+    table_name = 'bidw'
+    sql_command = 'SELECT industry_2, customer_name, contract_speed, service_name, contract_end FROM {} WHERE ' \
+                     'service_id="{}"'.format(table_name, service_id)
     bidw_df = zabbix.read_db(sql_command)
-    bidw_df.columns = ['industry_2', 'customer_name', 'contract_speed', 'service_name', 'contract_end']
-    print('----- bidw_df -----')
-    print(bidw_df, '\n')
+    if not bidw_df.empty:
+        bidw_df.columns = ['industry_2', 'customer_name', 'contract_speed', 'service_name', 'contract_end']
+        print('----- bidw_df -----')
+        print(bidw_df, '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
 
     # bidw table 에서 industry 기준 contract_speed
+    table_name = 'bidw'
     industry = bidw_df['industry_2'][0]
-    sql_command = 'SELECT industry_2, contract_speed FROM bidw WHERE industry_2="{}"'.format(industry)
+    sql_command = 'SELECT industry_2, contract_speed FROM {} WHERE industry_2="{}"'.format(table_name, industry)
     industry_speed_df = zabbix.read_db(sql_command)
-    industry_speed_df.columns = ['industry_2', 'contract_speed']
-    print('----- industry_speed_df -----')
-    print(industry_speed_df, '\n')
+    if not industry_speed_df.empty:
+        industry_speed_df.columns = ['industry_2', 'contract_speed']
+        print('----- industry_speed_df -----')
+        print(industry_speed_df.head(), '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
+
 
     # contract_speed 값 변환 (M -> pow(10,6), G -> pow(10,9))
     speed_data = []
@@ -288,6 +162,7 @@ def making_report(datetimes, line_no, date_start, date_end):
         else:
             under_100M += 1
 
+    print('----- ip 개수 -----')
     print("1G 이상: {} 개".format(over_1G))
     print("500M 이상: {} 개".format(over_500M))
     print("100M 이상: {} 개".format(over_100M))
@@ -295,22 +170,32 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # bidw table 과 neoss table 에서 service_id 기준 industry, customer_name, ethernet_ip 합치기. 동종업계 ip 비교 위함
-    sql_command = 'SELECT industry_2, customer_name, service_id FROM bidw WHERE industry_2="{}"'\
-        .format(industry)
+    table_name = 'bidw'
+    sql_command = 'SELECT industry_2, customer_name, service_id FROM {} WHERE industry_2="{}"'\
+        .format(table_name, industry)
     merge_1 = zabbix.read_db(sql_command)
-    merge_1.columns = ['industry_2', 'customer_name', 'service_id']
-    print('----- merge_1 -----')
-    print(merge_1, '\n')
+    if not merge_1.empty:
+        merge_1.columns = ['industry_2', 'customer_name', 'service_id']
+        print('----- merge_1 -----')
+        print(merge_1.head(), '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
 
-    sql_command = 'SELECT service_id, ethernet_ip FROM neoss'
+    table_name = 'neoss'
+    sql_command = 'SELECT service_id, ethernet_ip FROM {}'.format(table_name)
     merge_2 = zabbix.read_db(sql_command)
-    merge_2.columns = ['service_id', 'ethernet_ip']
-    print('----- merge_2 -----')
-    print(merge_2, '\n')
+    if not merge_2.empty:
+        merge_2.columns = ['service_id', 'ethernet_ip']
+        print('----- merge_2 -----')
+        print(merge_2.head(), '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
 
     merge_df = pd.merge(merge_1, merge_2, on="service_id")
     print('----- merge_df -----')
-    print(merge_df, '\n')
+    print(merge_df.head(), '\n')
 
     # 동종업계 고객 별 ip value 설정
     customer_name_dict = {}
@@ -321,6 +206,7 @@ def making_report(datetimes, line_no, date_start, date_end):
         try:
             customer_name_dict[row[1]] += pow(2, 32 - int(row[3][-2:]))
         except:
+            print('try 에러 발생!')
             pass
 
     # 동종업계 ip 별 count
@@ -347,7 +233,7 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # host_name 과 hostid 추출
-
+    print('----- host info -----')
     host_name = neoss_df['host_name'][0]
     print('host_name: {}'.format(host_name))
 
@@ -358,6 +244,7 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # itemid 추출
+    print('----- interface & itemid -----')
     interface = neoss_df['interface'][0]
     print('interface: {}'.format(interface))
     # key_값 검색을 위한 정규식 표현 생성
@@ -376,7 +263,7 @@ def making_report(datetimes, line_no, date_start, date_end):
         pass
 
     print('regexp_list: {}'.format(regexp_list))
-    for regexp in regexp_list:
+    for index, regexp in enumerate(regexp_list):
         sql_command = 'SELECT itemid, key_ FROM items WHERE hostid="{}" and key_ REGEXP "{}"'.format(str(hostid), regexp)
         itemid_df = zabbix.read_db(sql_command)
         if not itemid_df.empty:
@@ -386,12 +273,11 @@ def making_report(datetimes, line_no, date_start, date_end):
             else:
                 out_itemid, in_itemid = itemid_df['itemid']
             itemid_list = [in_itemid, out_itemid]
-            print('in_itemid: {}, out_itemid: {}'.format(in_itemid, out_itemid))
+            print('in_itemid: {}, out_itemid: {}'.format(in_itemid, out_itemid), '\n')
             break
-        else:
-            print('regexp: {} 로 itemid를 찾을 수 없습니다.')
-            sys.exit()
-
+        elif index == len(regexp_list)-1:
+            error_message = 'key_ 값 식별 error'
+            return error_message
 
     # interface = neoss_df['interface'][0]
     # print('interface: {}'.format(interface))
@@ -417,11 +303,16 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # 제공속도와 청약속도 추출
-    sql_command = 'SELECT engre, gbic FROM realspeed WHERE leased_line_num={}'.format(line_num)
+    table_name = 'realspeed'
+    sql_command = 'SELECT engre, gbic FROM {} WHERE leased_line_num={}'.format(table_name, line_num)
     df_system = zabbix.read_db(sql_command)
-    df_system.columns = ['engre', 'gbic']
-    print('----- df_system -----')
-    print(df_system, '\n')
+    if not df_system.empty:
+        df_system.columns = ['engre', 'gbic']
+        print('----- df_system -----')
+        print(df_system, '\n')
+    else:
+        error_message = '{} table empty'.format(table_name)
+        return error_message
 
     # offer_speed: 제공속도, contract_speed: 청약속도, _M: 각 속도 메가 단위
     offer_speed = int(df_system['engre'][0])
@@ -442,11 +333,18 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # AI 학습 및 예측
+    table_name = 'history_uint'
     for itemid in itemid_list:
-        sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic FROM history_uint WHERE itemid IN ({})".format(itemid)
+        sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic FROM {} WHERE itemid IN ({})".format(table_name, itemid)
         df = zabbix.read_db(sql_command)
-        df.columns = ['itemid', 'datetime', 'traffic']
-        print(df)
+        if not df.empty:
+            df.columns = ['itemid', 'datetime', 'traffic']
+            print('----- itemid:{} df -----')
+            print(df.head(), '\n')
+        else:
+            error_message = '{} table empty'.format(table_name)
+            return error_message
+
         dp_df = reframe_df(df)
         traffic_scaler = Scaler(dp_df, 'traffic')
         sc_df = traffic_scaler.normalization()
@@ -474,8 +372,8 @@ def making_report(datetimes, line_no, date_start, date_end):
             print('데이터 부족으로 예측 불가', '\n')
             upload_df['traffic'] = 0
         # upload_df.to_csv('C:/Users/User/Desktop/upload_df.csv', index=False)
-        delete_db(itemid)
-        insert_db(upload_df)
+        zabbix.delete_db(itemid)
+        zabbix.insert_db(upload_df)
 
 
     ###### 스레드 테스트 ######
@@ -511,13 +409,18 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # 실제 traffic 값 추출
     real_traffic_list = []
+    table_name = 'history_uint'
     for itemid in itemid_list:
-        sql_command = 'SELECT itemid, from_unixtime(clock), value  FROM history_uint WHERE itemid="{}" ' \
+        sql_command = 'SELECT itemid, from_unixtime(clock), value  FROM {} WHERE itemid="{}" ' \
                          'and "{}" <= from_unixtime(clock) AND from_unixtime(clock) <= "{}"'\
-                        .format(itemid, date_start, date_end)
+                        .format(table_name, itemid, date_start, date_end)
         traffic_df = zabbix.read_db(sql_command)
-        traffic_df.columns = ['itemid', 'clock', 'traffic']
-        real_traffic_list.append(traffic_df)
+        if not traffic_df.empty:
+            traffic_df.columns = ['itemid', 'clock', 'traffic']
+            real_traffic_list.append(traffic_df)
+        else:
+            error_message = '{} table empty'.format(table_name)
+            return error_message
     in_real_traffic_df = real_traffic_list[0]
     out_real_traffic_df = real_traffic_list[1]
     print('-----in_real_traffic_df-----')
@@ -547,6 +450,7 @@ def making_report(datetimes, line_no, date_start, date_end):
                 else:
                     over_count[index, 5] += 1
             except:
+                print('try 에러 발생!')
                 pass
 
     in_over_100 = over_count[0, 0]
@@ -615,11 +519,16 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # AI 예측 데이터 추출
     pred_traffic_list = []
+    table_name = 'test_ys'
     for itemid in itemid_list:
-        sql_command = 'SELECT itemid, dates, traffic FROM test_ys WHERE itemid="{}"'.format(itemid)
+        sql_command = 'SELECT itemid, dates, traffic FROM {} WHERE itemid="{}"'.format(table_name, itemid)
         pred_traffic_df = zabbix.read_db(sql_command)
-        pred_traffic_df.columns = ['itemid', 'dates', 'traffic']
-        pred_traffic_list.append(pred_traffic_df)
+        if not pred_traffic_df.empty
+            pred_traffic_df.columns = ['itemid', 'dates', 'traffic']
+            pred_traffic_list.append(pred_traffic_df)
+        else:
+            error_message = '{} table empty'.format(table_name)
+            return error_message
     in_pred_traffic_df = pred_traffic_list[0]
     out_pred_traffic_df = pred_traffic_list[1]
     print('----- in_pred_traffic_df -----')
@@ -642,6 +551,7 @@ def making_report(datetimes, line_no, date_start, date_end):
                 else:
                     pred_over_count[index, 2] += 1
             except:
+                print('try 에러 발생!')
                 pass
 
     pred_in_over_90 = pred_over_count[0, 0]
@@ -664,6 +574,7 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     #########total script###########
+    print('report 생성을 위한 데이터 정리 시작...')
 
     # -------------------한글 폰트 지원-------------------
     path_gothic = 'C:/Windows/Fonts/malgunbd.ttf'
@@ -700,6 +611,8 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # 약정만료 기한 표시
     contract_end = bidw_df['contract_end'][0]
+    if contract_end == '999912':
+        contract_end = '999911'
     contract_ends = datetime.datetime.strptime(contract_end, '%Y%m') + relativedelta(months=1) - datetime.timedelta(days=1)
     now = datetime.datetime.strptime(datetimes, '%Y-%m-%d-%H%M%S')
 
@@ -762,6 +675,7 @@ def making_report(datetimes, line_no, date_start, date_end):
     page0_1_frame.text = data0_1
     page0_2_frame = shapes.placeholders[19].text_frame
     page0_2_frame.text = data0_2
+    print('첫 번째 슬라이드 완료')
 
     #####page1####
     slide_layout = prs.slide_layouts[1]
@@ -813,12 +727,12 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     if len(script1_13) == 2:
         page1_13_frame = shapes.placeholders[25].text_frame.paragraphs[0]
-        page1_13_frame.text = script1_12[0]
+        page1_13_frame.text = script1_13[0]
         page1_13_frame_1 = shapes.placeholders[25].text_frame.add_paragraph()
-        page1_13_frame_1.text = script1_12[1]
+        page1_13_frame_1.text = script1_13[1]
     else:
         page1_13_frame = shapes.placeholders[25].text_frame.paragraphs[0]
-        page1_13_frame.text = script1_12[0]
+        page1_13_frame.text = script1_13[0]
 
     if len(script1_14) == 3:
         page1_14_frame = shapes.placeholders[26].text_frame.paragraphs[0]
@@ -921,6 +835,7 @@ def making_report(datetimes, line_no, date_start, date_end):
         pic = shapes.add_picture(image_stream_types, left, top, width, height)
         plt.close()
 
+    print('두 번째 슬라이드 완료')
 
     #####page2#####
     slide_layout = prs.slide_layouts[2]
@@ -1068,7 +983,7 @@ def making_report(datetimes, line_no, date_start, date_end):
     height = Inches(1.9)
     pic = shapes.add_picture(image_stream_types, left, top, width, height)
     plt.close()
-
+    print('두 번째 슬라이드 완료')
 
     #####동종업계 IP주소 자원 이용현황#####
 
