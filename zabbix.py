@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pymysql
 
 class Zabbix():
@@ -18,7 +19,7 @@ class Zabbix():
         self.db_connect = pymysql.connect(user=user, passwd=passwd, host=host, db=db, port=port, charset=charset)
         self.curs = self.db_connect.cursor()
 
-    def read_db(self, sql_command, table_name):
+    def read_db(self, sql_command):
         """ zabbix db 읽어오기
 
         Args:
@@ -29,6 +30,8 @@ class Zabbix():
         """
         self.curs.execute(sql_command)
         df = pd.DataFrame(self.curs.fetchall())
+        df = df.replace('', np.nan)
+        df.dropna(axis=0, inplace=True)
 
         return df
 

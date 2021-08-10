@@ -7,6 +7,21 @@ import pymysql
 
 
 def reporting(idx, datetime, line_no, date_start, date_end):
+    """웹에서 호출 시 report를 생성하는 함수
+
+    report table의 state column확인:
+     - 0 : 리포트 생성 시작
+     - 1 : 리포트 생성 중
+     - 2 : 리포트 생성 완료
+     - 9 : 에러 발생
+
+     Args:
+         - idx
+         - datetime
+         - line_no
+         - date_start
+         - date_end
+    """
 
     db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='test', port=3306, charset='euckr')
     # curs = db_connect.cursor(pymysql.cursors.DictCursor)
@@ -17,25 +32,21 @@ def reporting(idx, datetime, line_no, date_start, date_end):
     db_connect.commit()
 
     try:
-        url = making_report(datetime, line_no, date_start, date_end)   # 수정
-        if '-' in url:
-            state = 2
-            print('report 생성 완료: {}'.format(url),'\n')  # 수정
-        else:
-            state = 9
-            print(url,'\n')
-
-        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(state, str(url), idx))
+        url = making_report(datetime, line_no, date_start, date_end)
+        if url[:5] != 'error':   # error 발생하지 않을 경우
+            curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(2, url, idx))
+            print('report 생성 완료: {}\n'.format(url))
+        else:   # error 발생할 경우
+            curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, url, idx))
+            print('report 생성 중 error 발생', url+'\n', sep='\n')
         db_connect.commit()
         db_connect.close()
 
-
-    except:
-        error_message = '식별되지 않은 error'
-        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, error_message, idx))
+    except:   # 식별되지 않은 예외의 error 발생할 경우
+        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, '식별되지 않은 error', idx))
         db_connect.commit()
         db_connect.close()
-        print('report 생성 오류 발생!')  # 수정
+        print('report 생성 중 식별되지 않은 error 발생\n')
 
 
 if __name__ == '__main__':
@@ -55,13 +66,12 @@ if __name__ == '__main__':
             if row[6] == 0:
                 my_thread = Thread(target=reporting, args=(row[0], row[2], row[3], row[4], row[5],))
                 my_thread.start()
-                print('report 생성 요청')
-                break
-            else:
-                pass
+            #     break
+            # else:
+            #     pass
 
         time.sleep(3)
         loop_count += 1
         # loop_count 횟수만큼 db screening 완료
-        if loop_count % 3 == 0:
+        if loop_count % 20 == 0:
             print('Running...' + str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))

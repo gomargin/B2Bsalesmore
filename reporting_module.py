@@ -61,19 +61,16 @@ def making_report(datetimes, line_no, date_start, date_end):
     charset = 'euckr'
     zabbix = Zabbix(user=user, passwd=passwd, host=host, db=db, port=port, charset=charset)
 
-
     # neoss table 에서 데이터 가져오기
-    table_name = 'neoss'
-    sql_command = 'SELECT service_id, host_name, interface, ethernet_ip FROM {} WHERE leased_line_num="{}"'.format(
-        table_name, line_num)
-    neoss_df = zabbix.read_db(sql_command, table_name)
+    sql_command = 'SELECT service_id, host_name, interface, ethernet_ip FROM neoss WHERE leased_line_num="{}"'.format(line_num)
+    neoss_df = zabbix.read_db(sql_command)
     if not neoss_df.empty:
         neoss_df.columns = ['service_id', 'host_name', 'interface', 'ethernet_ip']
         print('----- neoss_df -----')
         print(neoss_df, '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
+        error = 'error: More than one column of neoss_df is empty'
+        return error
 
 
     # neoss_df 에서 ip 데이터 뽑기. ppt #3  'ip 할당 현황' 데이터
@@ -82,13 +79,9 @@ def making_report(datetimes, line_no, date_start, date_end):
     ip_count = [0 for _ in range(7)]   # ip count 하는 list [256, 128, 64, 32, 16, 8, 4] 순서
     total_ip = 0
     for ip in ethernet_ip:
-        try:
-            ip_end = int(ip[-2:])   # ip 마지막 두 자리 정수로 변경
-            ip_count[ip_end - 24] += 1   # ip 마지막 두 자리 정수 변환. 24 -> 256, 25 -> 128, 24 -> 64 ...
-            total_ip += pow(2, 32 - ip_end)
-        except:
-            error_message = 'ethernet_ip 값 error'
-            return error_message
+        ip_end = int(ip[-2:])   # ip 마지막 두 자리 정수로 변경
+        ip_count[ip_end - 24] += 1   # ip 마지막 두 자리 정수 변환. 24 -> 256, 25 -> 128, 24 -> 64 ...
+        total_ip += pow(2, 32 - ip_end)
 
     ethernet_ip_24 = ip_count[0]
     ethernet_ip_25 = ip_count[1]
@@ -111,31 +104,29 @@ def making_report(datetimes, line_no, date_start, date_end):
     service_id = neoss_df['service_id'][0]
 
     # bidw table 에서 데이터 가져오기
-    table_name = 'bidw'
-    sql_command = 'SELECT industry_2, customer_name, contract_speed, service_name, contract_end FROM {} WHERE ' \
-                     'service_id="{}"'.format(table_name, service_id)
+    sql_command = 'SELECT industry_2, customer_name, contract_speed, service_name, contract_end FROM bidw WHERE ' \
+                     'service_id="{}"'.format(service_id)
     bidw_df = zabbix.read_db(sql_command)
     if not bidw_df.empty:
         bidw_df.columns = ['industry_2', 'customer_name', 'contract_speed', 'service_name', 'contract_end']
         print('----- bidw_df -----')
         print(bidw_df, '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
+        error = 'error: More than one column of bidw_df is empty'
+        return error
+
 
     # bidw table 에서 industry 기준 contract_speed
-    table_name = 'bidw'
     industry = bidw_df['industry_2'][0]
-    sql_command = 'SELECT industry_2, contract_speed FROM {} WHERE industry_2="{}"'.format(table_name, industry)
+    sql_command = 'SELECT industry_2, contract_speed FROM bidw WHERE industry_2="{}"'.format(industry)
     industry_speed_df = zabbix.read_db(sql_command)
     if not industry_speed_df.empty:
         industry_speed_df.columns = ['industry_2', 'contract_speed']
         print('----- industry_speed_df -----')
         print(industry_speed_df.head(), '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
-
+        error = 'error: More than one column of industry_speed_df is empty'
+        return error
 
     # contract_speed 값 변환 (M -> pow(10,6), G -> pow(10,9))
     speed_data = []
@@ -170,30 +161,27 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # bidw table 과 neoss table 에서 service_id 기준 industry, customer_name, ethernet_ip 합치기. 동종업계 ip 비교 위함
-    table_name = 'bidw'
-    sql_command = 'SELECT industry_2, customer_name, service_id FROM {} WHERE industry_2="{}"'\
-        .format(table_name, industry)
-    merge_1 = zabbix.read_db(sql_command)
-    if not merge_1.empty:
-        merge_1.columns = ['industry_2', 'customer_name', 'service_id']
-        print('----- merge_1 -----')
-        print(merge_1.head(), '\n')
+    sql_command = 'SELECT industry_2, customer_name, service_id FROM bidw WHERE industry_2="{}"'.format(industry)
+    merge_df_1 = zabbix.read_db(sql_command)
+    if not merge_df_1.empty:
+        merge_df_1.columns = ['industry_2', 'customer_name', 'service_id']
+        print('----- merge_df_1 -----')
+        print(merge_df_1.head(), '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
+        error = 'error: More than one column of merge_df_1 is empty'
+        return error
 
-    table_name = 'neoss'
-    sql_command = 'SELECT service_id, ethernet_ip FROM {}'.format(table_name)
-    merge_2 = zabbix.read_db(sql_command)
-    if not merge_2.empty:
-        merge_2.columns = ['service_id', 'ethernet_ip']
-        print('----- merge_2 -----')
-        print(merge_2.head(), '\n')
+    sql_command = 'SELECT service_id, ethernet_ip FROM neoss'
+    merge_df_2 = zabbix.read_db(sql_command)
+    if not merge_df_2.empty:
+        merge_df_2.columns = ['service_id', 'ethernet_ip']
+        print('----- merge_df_2 -----')
+        print(merge_df_2.head(), '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
+        error = 'error: More than one column of merge_df_2 is empty'
+        return error
 
-    merge_df = pd.merge(merge_1, merge_2, on="service_id")
+    merge_df = pd.merge(merge_df_1, merge_df_2, on="service_id")
     print('----- merge_df -----')
     print(merge_df.head(), '\n')
 
@@ -203,11 +191,11 @@ def making_report(datetimes, line_no, date_start, date_end):
         customer_name_dict[customer] = 0
 
     for row in merge_df.values:   # col1: industry, col2: customer_name, col3: service_id, col4: ethernet_ip
-        try:
+        if row[3] is not None:
             customer_name_dict[row[1]] += pow(2, 32 - int(row[3][-2:]))
-        except:
-            print('try 에러 발생!')
+        else:
             pass
+
 
     # 동종업계 ip 별 count
     ip_list = [1000, 500, 256, 128, 64, 32, 16, 8, 4]
@@ -273,11 +261,12 @@ def making_report(datetimes, line_no, date_start, date_end):
             else:
                 out_itemid, in_itemid = itemid_df['itemid']
             itemid_list = [in_itemid, out_itemid]
+            print('regexp: {}'.format(regexp))
             print('in_itemid: {}, out_itemid: {}'.format(in_itemid, out_itemid), '\n')
             break
         elif index == len(regexp_list)-1:
-            error_message = 'key_ 값 식별 error'
-            return error_message
+            error = 'error: interface 값을 통한 itemid 찾기 실패'
+            return error
 
     # interface = neoss_df['interface'][0]
     # print('interface: {}'.format(interface))
@@ -303,21 +292,20 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # 제공속도와 청약속도 추출
-    table_name = 'realspeed'
-    sql_command = 'SELECT engre, gbic FROM {} WHERE leased_line_num={}'.format(table_name, line_num)
-    df_system = zabbix.read_db(sql_command)
-    if not df_system.empty:
-        df_system.columns = ['engre', 'gbic']
-        print('----- df_system -----')
-        print(df_system, '\n')
+    sql_command = 'SELECT engre, gbic FROM realspeed WHERE leased_line_num={}'.format(line_num)
+    system_df = zabbix.read_db(sql_command)
+    if not system_df.empty:
+        system_df.columns = ['engre', 'gbic']
+        print('----- system_df -----')
+        print(system_df, '\n')
     else:
-        error_message = '{} table empty'.format(table_name)
-        return error_message
+        error = 'error: More than one column of system_df is empty'
+        return error
 
     # offer_speed: 제공속도, contract_speed: 청약속도, _M: 각 속도 메가 단위
-    offer_speed = int(df_system['engre'][0])
+    offer_speed = int(system_df['engre'][0])
     offer_speed_M = int(offer_speed/pow(10, 6))
-    contract_speed = int(df_system['gbic'][0])
+    contract_speed = int(system_df['gbic'][0])
     contract_speed_M = int(contract_speed/pow(10, 6))
 
     if int(offer_speed) >= contract_speed:
@@ -333,17 +321,17 @@ def making_report(datetimes, line_no, date_start, date_end):
 
 
     # AI 학습 및 예측
-    table_name = 'history_uint'
     for itemid in itemid_list:
-        sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic FROM {} WHERE itemid IN ({})".format(table_name, itemid)
+        sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic " \
+                      "FROM history_uint WHERE itemid IN ({})".format(itemid)
         df = zabbix.read_db(sql_command)
         if not df.empty:
             df.columns = ['itemid', 'datetime', 'traffic']
-            print('----- itemid:{} df -----')
+            print('----- itemid df -----')
             print(df.head(), '\n')
         else:
-            error_message = '{} table empty'.format(table_name)
-            return error_message
+            error = 'error: More than one column of df is empty'
+            return error
 
         dp_df = reframe_df(df)
         traffic_scaler = Scaler(dp_df, 'traffic')
@@ -409,18 +397,18 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # 실제 traffic 값 추출
     real_traffic_list = []
-    table_name = 'history_uint'
     for itemid in itemid_list:
-        sql_command = 'SELECT itemid, from_unixtime(clock), value  FROM {} WHERE itemid="{}" ' \
+        sql_command = 'SELECT itemid, from_unixtime(clock), value  FROM history_uint WHERE itemid="{}" ' \
                          'and "{}" <= from_unixtime(clock) AND from_unixtime(clock) <= "{}"'\
-                        .format(table_name, itemid, date_start, date_end)
+                        .format(itemid, date_start, date_end)
         traffic_df = zabbix.read_db(sql_command)
         if not traffic_df.empty:
             traffic_df.columns = ['itemid', 'clock', 'traffic']
             real_traffic_list.append(traffic_df)
         else:
-            error_message = '{} table empty'.format(table_name)
-            return error_message
+            error = 'error: More than one column of traffic_df is empty'
+            return error
+
     in_real_traffic_df = real_traffic_list[0]
     out_real_traffic_df = real_traffic_list[1]
     print('-----in_real_traffic_df-----')
@@ -519,16 +507,16 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     # AI 예측 데이터 추출
     pred_traffic_list = []
-    table_name = 'test_ys'
     for itemid in itemid_list:
-        sql_command = 'SELECT itemid, dates, traffic FROM {} WHERE itemid="{}"'.format(table_name, itemid)
+        sql_command = 'SELECT itemid, dates, traffic FROM test_ys WHERE itemid="{}"'.format(itemid)
         pred_traffic_df = zabbix.read_db(sql_command)
-        if not pred_traffic_df.empty
+        if not pred_traffic_df.empty:
             pred_traffic_df.columns = ['itemid', 'dates', 'traffic']
             pred_traffic_list.append(pred_traffic_df)
         else:
-            error_message = '{} table empty'.format(table_name)
-            return error_message
+            error = 'error: More than one column of pred_traffic_df is empty'
+            return error
+
     in_pred_traffic_df = pred_traffic_list[0]
     out_pred_traffic_df = pred_traffic_list[1]
     print('----- in_pred_traffic_df -----')

@@ -24,16 +24,14 @@ from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint
 def reframe_df(df):
     """
     :param db에서 로드한 데이터프레임
-    :return: 재구성한 데이터프레임(index: date, column: 'dt2sin', 'traffic')
+    :return: 재구성한 데이터프레임(index: date, column: 'day2sin', 'traffic')
     """
-    week2sec = 7 * 24 * 60 * 60   # 일주일을 초 단위로 변환
-    dt2ts = df['datetime'].map(datetime.datetime.timestamp)   # datetime to timestamp
-    df['dt2sin'] = np.sin(dt2ts*(2*np.pi/week2sec))   # datetime to sin
+    df['day'] = df['datetime'].dt.weekday
+    df['day2sin'] = np.sin((df['day']/7)*2*np.pi)   # datetime to sin
     df['date'] = df['datetime'].dt.date   # date column 추가
-    df.drop(['itemid', 'datetime'], axis=1, inplace=True)
-    df = df[['date', 'dt2sin', 'traffic']]
+    df = df[['date', 'day2sin', 'traffic']]
     dp_df = df.groupby(['date'], as_index=True).max()   # day peak dataframe
-    dp_df = dp_df.dropna()
+    dp_df.dropna(axis=0, inplace=True)
     return dp_df
 
 
