@@ -35,7 +35,7 @@ def reframe_df(df):
     return dp_df
 
 
-class Scaler():
+class Scaler:
     def __init__(self, df, feature):
         self.df = df
         self.feature = feature
@@ -51,9 +51,10 @@ class Scaler():
         return pred_array
 
 
-class Train():
-    def __init__(self, itemid, in_steps, out_steps, valid_per, epochs, batch_size, unit, drop_per):
+class Train:
+    def __init__(self, itemid, pred_len, in_steps, out_steps, valid_per, epochs, batch_size, unit, drop_per):
         self.itemid = itemid
+        self.pred_len = pred_len
         self.in_steps = in_steps
         self.out_steps = out_steps
         self.valid_per = valid_per
@@ -84,7 +85,7 @@ class Train():
         model.compile(optimizer='rmsprop', loss='mean_squared_error')
         return model
 
-    def predict(self, df):
+    def train_model(self, df):
         train_x, train_y = self.split_data(df)
         model = self.generate_lstm(train_x)
         # verbose 1: 언제 training 멈추었는지 확인 가능
@@ -93,10 +94,23 @@ class Train():
         model_path = os.getcwd() + '/models/' + model_name
         model_check = ModelCheckpoint(filepath=model_path, monitor='loss', mode='min', save_best_only=True)
         # verbose 0: silence, 1: progress bar, 2: one line per each
-        hist = model.fit(train_x, train_y, self.batch_size, self.epochs, validation_split=self.valid_per,
-                         callbacks=[early_stopping, model_check], verbose=0)
-        test_data = df.values[-self.in_steps:]
-        test_x = test_data.reshape(1, self.in_steps, df.shape[1])
-        # model = load_model('./models/{}.h5'.format(self.itemid))
-        prediction = model.predict(test_x)
-        return prediction
+        model.fit(train_x, train_y, self.batch_size, self.epochs, validation_split=self.valid_per,
+                  callbacks=[early_stopping, model_check], verbose=0)
+
+    def predict_model(self, df):
+        model = load_model('./models/{}.h5'.format(self.itemid))
+        input_data = df.values[-self.in_steps:]
+        day2sin_list = [np.sin((i / 7) * 2 * np.pi) for i in range(7)]
+        for _ in range(self.pred_len):
+            input_x = input_data[-3:].reshape(1, 3, 2)
+            prediction = model.predict(input_x)[0][0]
+            last_day = input_data[-1][0]
+            last_idx = day2sin_list.index(last_day)
+            if last_idx != 6:
+                next_ = day2sin_list[last_idx + 1]
+            else:
+                next_ = 0
+            new_row = [next_, prediction]
+            input_data = np.append(input_data, [new_row], axis=0)
+
+        return input_data[3:, -1]
