@@ -385,94 +385,93 @@ class Reporting(Zabbix):
                         traffic_count[index, 0] += 1
                     elif int(offer_speed) > int(value) >= int(offer_speed)*0.9:
                         traffic_count[index, 1] += 1
-                    elif int(offer_speed)*0.9 > int(value) >= int(offer_speed)*0.8:
+                    elif int(offer_speed)*0.9 > int(value) >= int(offer_speed)*0.7:
                         traffic_count[index, 2] += 1
-                    elif int(offer_speed)*0.8 > int(value) >= int(offer_speed)*0.7:
-                        traffic_count[index, 3] += 1
                     elif int(offer_speed)*0.7 > int(value) >= int(offer_speed)*0.01:
-                        traffic_count[index, 4] += 1
+                        traffic_count[index, 3] += 1
                     else:
-                        traffic_count[index, 5] += 1
+                        traffic_count[index, 4] += 1
                 except:
                     print('try 에러 발생!')
                     pass
 
         in_over_100 = traffic_count[0, 0]
         in_over_90 = traffic_count[0, 1]
-        in_over_80 = traffic_count[0, 2]
-        in_over_70 = traffic_count[0, 3]
-        in_under_69 = traffic_count[0, 4]
-        in_under_1 = traffic_count[0, 5]
+        in_over_70 = traffic_count[0, 2]
+        in_under_69 = traffic_count[0, 3]
+        in_under_1 = traffic_count[0, 4]
         out_over_100 = traffic_count[1, 0]
         out_over_90 = traffic_count[1, 1]
-        out_over_80 = traffic_count[1, 2]
-        out_over_70 = traffic_count[1, 3]
-        out_under_69 = traffic_count[1, 4]
-        out_under_1 = traffic_count[1, 5]
+        out_over_70 = traffic_count[1, 2]
+        out_under_69 = traffic_count[1, 3]
+        out_under_1 = traffic_count[1, 4]
 
-        # script1_12 = []
-        # arr_list = []
-        # for row in range(traffic_count.shape[0]):
-        #     for col in range(traffic_count.shape[1]):
-        #         if traffic_count[row][col] != 0:
-        #             arr_list.append((row, col))
-        #             break
-        # if arr_list[0][1] == arr_list[1][1]:
-        #     updown = '업/다운로드'
-        # else:
-        #     for _ in range(traffic_count.shape[0]):
-        #
-        # for row in range(traffic_count[0]):
-
-        if in_over_100 > 0:
-            script1_12_0 = '업/다운 트래픽이 제공속도인 ' + str(offer_speed_M) + 'Mbps를 초과하는 트래픽 폭주 ' + \
-                           str(in_over_100) + '회 발생'
-            script1_12_1 = '5분 평균치 감안 시 실제 체감속도는 더욱 늦을 것으로 판단됨'
-            script1_12_2 = '정확한 원인은 고객사 보안장비 등에서 IP/서비스별 확인 필요'
-            script1_12 = [script1_12_0, script1_12_1, script1_12_2]
-
-            script1_14_0 = '정상적인 업무 트래픽에 의한 폭주일 경우, GiGA Office 도입 또는 코넷 증속 필요'
-            script1_14_1 = '안정적인 인터넷 이용을 위해 QoS 기반 UTM/방화벽 망구성 및 트래픽 제한 등 관리 필요'
-            script1_14_2 = '네트워크 및 보안 진단 컨설팅 필요'
-            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
-        elif in_over_90 > 0:
-            script1_12_0 = '업/다운 트래픽이 제공속도 ' + str(offer_speed_M) + 'Mbps에 육박하는 트래픽 폭주 ' +\
-                         str(in_over_90) + '회 발생'
-            script1_12_1 = '5분 평균치 감안 시 실제 체감속도는 더욱 늦을 것으로 판단됨'
-            script1_12_2 = '정확한 원인은 고객사 보안장비 등에서 IP/서비스별 확인 필요'
-            script1_12 = [script1_12_0, script1_12_1, script1_12_2]
-
-            script1_14_0 = '정상적인 업무 트래픽에 의한 폭주일 경우, GiGA Office 도입 또는 코넷 증속 권고'
-            script1_14_1 = '안정적인 인터넷 이용을 위해 QoS 기반 UTM/방화벽 망구성 및 트래픽 제한 등 관리 필요'
-            script1_14_2 = '네트워크 및 보안 진단 컨설팅 필요'
-            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
-        elif (in_over_70 + in_over_80) > 0:
-            script1_12_0 = '다운로드의 경우 권고치를 초과하는 트래픽 폭주 ' + str(in_over_70 + in_over_80) + '회 발생'
-            script1_12_1 = '5분 평균치 감안 시 실제 체감속도는 다소 늦을 수 있음'
-            script1_12 = [script1_12_0, script1_12_1]
-
-            script1_14_0 = '트래픽 증가를 고려하여 GiGA Office 도입 또는 코넷 증속 권고'
-            script1_14_1 = '주기적인 모니터링으로 트래픽 추적 관리 권고'
-            script1_14 = [script1_14_0, script1_14_1]
-        elif in_under_69 > 0:
-            script1_12_0 = '업/다운 트래픽이 권고치 이내로서 비교적 안정적임'
-            script1_12_1 = '5분 평균 집계치임을 감안하더라도 체감속도는 비교적 안정적일 것으로 판단됨'
-            script1_12 = [script1_12_0, script1_12_1]
-
-            script1_14_0 = '주기적인 모니터링으로 트래픽 추적 관리 권고'
-            script1_14 = [script1_14_0]
-        elif in_under_1 > 0:
-            script1_12_0 = '업/다운 트래픽이 권고치 이내로 매우 안정적임'
-            script1_12 = [script1_12_0]
-
-            script1_14_0 = '주기적인 모니터링으로 트래픽 추적 관리 권고'
-            script1_14 = [script1_14_0]
+        arr_list = []
+        for row in range(traffic_count.shape[0]):
+            for col in range(traffic_count.shape[1]):
+                if traffic_count[row][col] != 0:
+                    arr_list.append((row, col))
+                    break
+        if (arr_list[0][1] <= 3) and (arr_list[1][1] <= 3):   # 업/다운 둘 중 하나라도 70% 넘을 경우
+            if arr_list[0][1] == arr_list[1][1]:   # % 동일
+                updown = '업/다운로드'
+                max_col = arr_list[0][1]
+                over_count = in_over_100 + out_over_100
         else:
-            script1_12_0 = '트래픽 이용량이 거의 없음'
-            script1_12 = [script1_12_0]
+            max_col = max(arr_list[0][1], arr_list[1][1])
+            if arr_list[0][1] > arr_list[1][1]:   # 업로드가 더 큰 경우
+                updown = '업로드'
+                over_count = traffic_count[0, max_col]
+            else:   # 다운로드가 더 큰 경우
+                updown = '다운로드'
+                over_count = traffic_count[1, max_col]
 
-            script1_14_0 = '유휴 또는 백업용 회선으로 추정됨'
-            script1_14 = [script1_14_0]
+        if max_col == 0:
+            script1_12_0 = '{} 트래픽이 제공속도인 {}Mbps를 초과하는 트래픽 폭주가 {}회 발생하였습니다.'.format(updown, offer_speed_M, over_count)
+            script1_12_1 = '트래픽 폭주가 지속적으로 발생하는 경우, 접속불량, 속도지연 등 서비스 이용에 불편을 초래할 수 있습니다.'
+            script1_12 = [script1_12_0, script1_12_1]
+
+            script1_14_0 = '정상적인 업무 트래픽에 의한 폭주일 경우, GiGA Office 도입 또는 코넷 증속을 권고합니다.'
+            script1_14_1 = '보다 안정적인 서비스 이용을 위해 KT만의 차별화된 맞춤형 보안서비스를 이용할 수 있습니다.'
+            script1_14_2 = '보안진단 컨설팅(E-브로셔 참조) 이용 및 보안서비스 가입은 영업 담당자에게 문의하여 주시기 바랍니다.'
+            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
+        elif max_col == 1:
+            script1_12_0 = '{} 트래픽이 제공속도인 {}Mbps를 초과하는 트래픽 폭주가 {}회 발생하였습니다.'.format(updown, offer_speed_M, over_count)
+            script1_12_1 = '단, 최고치 트래픽이 5분 평균치로 산출되므로, 실제 체감속도는 더욱 낮을 것으로 판단됩니다.'
+            script1_12 = [script1_12_0, script1_12_1]
+
+            script1_14_0 = '정상적인 업무 트래픽에 의한 폭주일 경우, GiGA Office 도입 또는 코넷 증속을 권고합니다.'
+            script1_14_1 = '보다 안정적인 서비스 이용을 위해 KT만의 차별화된 맞춤형 보안서비스를 이용할 수 있습니다.'
+            script1_14_2 = '보안진단 컨설팅(E-브로셔 참조) 이용 및 보안서비스 가입은 영업 담당자에게 문의하여 주시기 바랍니다.'
+            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
+        elif max_col == 2:
+            script1_12_0 = '{} 트래픽의 안정적 이용 권고치 70%를 초과한 건수가 {}회 발생하였습니다.'.format(updown, over_count)
+            script1_12_1 = '서비스 이용 상 문제는 발생하지 않을 것으로 판단되지만, 지속적인 관리가 필요합니다.'
+            script1_12 = [script1_12_0, script1_12_1]
+
+            script1_14_0 = '지속적인 트래픽 증가 트렌드를 감안하여 GiGA Office 도입 또는 코넷 증속을 권고합니다.'
+            script1_14_1 = '보다 안정적인 서비스 이용을 위해 KT만의 차별화된 맞춤형 보안서비스를 이용할 수 있습니다.'
+            script1_14_2 = '보안진단 컨설팅(E-브로셔 참조) 이용 및 보안서비스 가입은 영업 담당자에게 문의하여 주시기 바랍니다.'
+            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
+        elif max_col == 3:
+            script1_12_0 = '업/다운로드 양방향 모두, 제공속도의 70% 권고치 이내에서 안정적으로 이용하고 있습니다.'
+            script1_12_1 = '서비스 이용 상 문제는 발생하지 않을 것으로 판단되지만, 부하증가 요인을 감안하여 지속적인 관리가 필요합니다.'
+            script1_12 = [script1_12_0, script1_12_1]
+
+            script1_14_0 = '지속적인 트래픽 증가 트렌드를 감안하여 주기적인 트래픽 모니터링 관리를 권고합니다.'
+            script1_14_1 = '보다 안정적인 서비스 이용을 원하시면, KT만의 차별화된 맞춤형 보안서비스를 이용할 수 있습니다.'
+            script1_14_2 = '자세한 사항은 영업 담당자에게 문의하여 주시기 바랍니다.'
+            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
+        elif max_col == 4:
+            script1_12_0 = '업/다운로드 양방향 모두, 트래픽이 측정되지 않았습니다.'
+            script1_12_1 = '실제 사용 중인 경우, 트래픽이 수집되지 않았을 수 있으니, KT 담당자에게 문의 바랍니다.'
+            script1_12 = [script1_12_0, script1_12_1]
+
+            script1_14_0 = '트래픽이 수집되지 않고 있으며, 세부 원인은 추가 확인이 필요합니다.'
+            script1_14_1 = '정상적으로 서비스를 이용하고 있는 경우, 영업 담당자에게 문의하여 주시기 바랍니다.'
+            script1_14_2 = '평소 이용하지 않는 무휴/예비 회선인 경우, 비상시를 대비한 주기적인 관리가 필요합니다.'
+            script1_14 = [script1_14_0, script1_14_1, script1_14_2]
+
 
 
         # AI 예측 데이터 추출
@@ -598,8 +597,8 @@ class Reporting(Zabbix):
         data2_17 = ethernet_ip_list[6]
         data2_18 = ethernet_ip_list[7]
         data2_19 = str(in_over_70 + out_over_70)
-        data2_20 = str(in_over_80 + out_over_80)
-        data2_21 = str(in_over_90 + in_over_100 + out_over_90 + out_over_100)
+        data2_20 = str(in_over_90 + out_over_90)
+        data2_21 = str(in_over_100 + out_over_100)
         data2_22 = str(int(data2_19) + int(data2_20) + int(data2_21))
         data2_23 = '2_23'
         data2_24 = '2_24'
@@ -667,23 +666,17 @@ class Reporting(Zabbix):
         page1_12_frame = shapes.placeholders[34].text_frame
         page1_12_frame.text = data1_12
 
-        if len(script1_12) == 3:
+        if max_col == 0:
             page1_12_frame = shapes.placeholders[22].text_frame.paragraphs[0]
             page1_12_frame.text = script1_12[0]
             page1_12_frame_1 = shapes.placeholders[22].text_frame.add_paragraph()
             page1_12_frame_1.text = script1_12[1]
-            page1_12_frame_1.level = 1
-            page1_12_frame_2 = shapes.placeholders[22].text_frame.add_paragraph()
-            page1_12_frame_2.text = script1_12[2]
-        elif len(script1_12) == 2:
-            page1_12_frame = shapes.placeholders[22].text_frame.paragraphs[0]
-            page1_12_frame.text = script1_12[0]
-            page1_12_frame_1 = shapes.placeholders[22].text_frame.add_paragraph()
-            page1_12_frame_1.text = script1_12[1]
-            page1_12_frame_1.level = 1
         else:
             page1_12_frame = shapes.placeholders[22].text_frame.paragraphs[0]
             page1_12_frame.text = script1_12[0]
+            page1_12_frame_1 = shapes.placeholders[22].text_frame.add_paragraph()
+            page1_12_frame_1.text = script1_12[1]
+            page1_12_frame_1.level = 1
 
         if len(script1_13) == 2:
             page1_13_frame = shapes.placeholders[25].text_frame.paragraphs[0]
@@ -694,21 +687,22 @@ class Reporting(Zabbix):
             page1_13_frame = shapes.placeholders[25].text_frame.paragraphs[0]
             page1_13_frame.text = script1_13[0]
 
-        if len(script1_14) == 3:
+        if max_col == 4:
+            page1_14_frame = shapes.placeholders[26].text_frame.paragraphs[0]
+            page1_14_frame.text = script1_14[0]
+            page1_14_frame_1 = shapes.placeholders[26].text_frame.add_paragraph()
+            page1_14_frame_1.text = script1_14[1]
+            page1_14_frame_1.level = 1
+            page1_14_frame_2 = shapes.placeholders[26].text_frame.add_paragraph()
+            page1_14_frame_2.text = script1_14[2]
+            page1_14_frame_2.level = 1
+        else:
             page1_14_frame = shapes.placeholders[26].text_frame.paragraphs[0]
             page1_14_frame.text = script1_14[0]
             page1_14_frame_1 = shapes.placeholders[26].text_frame.add_paragraph()
             page1_14_frame_1.text = script1_14[1]
             page1_14_frame_2 = shapes.placeholders[26].text_frame.add_paragraph()
             page1_14_frame_2.text = script1_14[2]
-        elif len(script1_14) == 2:
-            page1_14_frame = shapes.placeholders[26].text_frame.paragraphs[0]
-            page1_14_frame.text = script1_14[0]
-            page1_14_frame_1 = shapes.placeholders[26].text_frame.add_paragraph()
-            page1_14_frame_1.text = script1_14[1]
-        else:
-            page1_14_frame = shapes.placeholders[26].text_frame.paragraphs[0]
-            page1_14_frame.text = script1_14[0]
 
 
         ##### Traffic plot #####

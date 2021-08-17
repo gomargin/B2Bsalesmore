@@ -11,8 +11,9 @@ import re
 import pandas as pd
 import numpy as np
 import datetime
+import pymysql
 
-from zabbix import Zabbix
+import zabbix
 from model import Scaler, Train
 from model import reframe_df
 
@@ -23,28 +24,32 @@ from matplotlib import pyplot as plt
 # tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
-def read_db_thread(itemid, table_name):
-    # """
-    # :param: itemid (history_uint 테이블)
-    # :return: df (columns: itemid, datetime, traffic)
-    # """
-    # global total_df
-    # db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='ZABBIXDB', port=3306,
-    #                              charset='euckr')
-    # curs = db_connect.cursor(pymysql.cursors.DictCursor)
-    # lock.acquire()
-    # sql_command = "SELECT itemid, from_unixtime(clock) as datetime, value as traffic FROM {} WHERE itemid IN ({})".format(
-    #     table_name, itemid)
-    # curs.execute(sql_command)
-    # df = pd.DataFrame(curs.fetchall())
-    # # print(table_name)
-    # # print(df)
-    # total_df = pd.concat([total_df, df])
-    # lock.release()
-    # # print('-----total_df-----')
-    # # print(total_df)
-    print('itemid: {}'.format(itemid))
-    print('table_name: {}'.format(table_name))
+def request(row):
+
+    idx, datetime, line_no, date_start, date_end = row
+    db_connect = pymysql.connect(user='zabbix', passwd='zabbix', host='210.121.218.5', db='test', port=3306,
+                                 charset='euckr')
+    curs = db_connect.cursor()
+    # db state 0 -> 1로 update
+    curs.execute('UPDATE report SET state="{}" WHERE idx="{}"'.format(1, idx))
+    db_connect.commit()
+
+    try:
+        url = making_report(datetime, line_no, date_start, date_end)
+        if url[:5] != 'error':  # error 발생하지 않을 경우
+            curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(2, url, idx))
+            print('report 생성 완료: {}\n'.format(url))
+        else:  # error 발생할 경우
+            curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, url, idx))
+            print('report 생성 중 error 발생', url + '\n', sep='\n')
+        db_connect.commit()
+        db_connect.close()
+
+    except:  # 식별되지 않은 예외의 error 발생할 경우
+        curs.execute('UPDATE report SET state="{}", url="{}" WHERE idx="{}"'.format(9, '식별되지 않은 error', idx))
+        db_connect.commit()
+        db_connect.close()
+        print('report 생성 중 식별되지 않은 error 발생\n')
 
 
 def making_report(datetimes, line_no, date_start, date_end):
@@ -59,7 +64,8 @@ def making_report(datetimes, line_no, date_start, date_end):
     db = 'ZABBIXDB'
     port = 3306
     charset = 'euckr'
-    zabbix = Zabbix(user=user, passwd=passwd, host=host, db=db, port=port, charset=charset)
+    db_login = [user, passwd, host, db, port, charset]
+    zabbix = Zabbix(db_login)
 
     # neoss table 에서 데이터 가져오기
     sql_command = 'SELECT service_id, host_name, interface, ethernet_ip FROM neoss WHERE leased_line_num="{}"'.format(line_num)
@@ -265,6 +271,8 @@ def making_report(datetimes, line_no, date_start, date_end):
             print('in_itemid: {}, out_itemid: {}'.format(in_itemid, out_itemid), '\n')
             break
         elif index == len(regexp_list)-1:
+            print('interface: {}'.format(interface))
+            print('regexp_list: {}'.format(regexp_list))
             error = 'error: interface 값을 통한 itemid 찾기 실패'
             return error
 
@@ -334,65 +342,42 @@ def making_report(datetimes, line_no, date_start, date_end):
             return error
 
         dp_df = reframe_df(df)
+        print('----- dp_df -----')
+        print(dp_df, '\n')
         traffic_scaler = Scaler(dp_df, 'traffic')
         sc_df = traffic_scaler.normalization()
-        df_length = len(sc_df)
-        print('df_length: {}'.format(df_length))
-        in_steps = (df_length // 42) * 7
-        print('in_steps: {}'.format(in_steps))
-        out_steps = in_steps
-        print('out_steps: {}'.format(out_steps))
-        if in_steps == 0:
-            out_steps = 7
+        df_len = len(sc_df)
+        print('df_len: {}'.format(df_len))
+        if df_len >= 42:
+            pred_len = df_len // 6
+        else:
+            pred_len = 0
+        print('pred_len: {}'.format(pred_len))
+
+        in_steps = 3
+        out_steps = 1
 
         # 해당 itemid에 해당하는 df 생성
-        upload_df = pd.DataFrame(index=range(0, out_steps), columns=['itemid', 'dates', 'traffic'])
-        upload_df['itemid'] = itemid
-        # 예측하고자 하는 첫날부터 out_steps 만큼의 list 생성
-        upload_df['dates'] = [(sc_df.index[-1] + datetime.timedelta(days=i)).strftime('%y%m%d') for i in range(out_steps)]
-        if in_steps != 0:
-            trainer = Train(itemid, in_steps, out_steps, valid_per=0, epochs=100, batch_size=128, unit=128, drop_per=0.1)
+
+        if pred_len != 0:
+            upload_df = pd.DataFrame(index=range(0, pred_len), columns=['itemid', 'dates', 'traffic'])
+            upload_df['itemid'] = itemid
+            # 예측하고자 하는 첫날부터 out_steps 만큼의 list 생성
+            upload_df['dates'] = [(sc_df.index[-1] + datetime.timedelta(days=i)).strftime('%y%m%d') for i in range(pred_len)]
+            trainer = Train(itemid, pred_len, in_steps, out_steps, valid_per=0, epochs=100, batch_size=128, unit=128, drop_per=0.1)
+            trainer.train_model(sc_df)
             # 음의 예측값은 0으로 변환
-            real_prediction = traffic_scaler.rev_normalization(trainer.predict(sc_df)[0])
+            real_prediction = traffic_scaler.rev_normalization(trainer.predict_model(sc_df))
             upload_df['traffic'] = [max(num, 0) for num in real_prediction]
             print('예측 완료!', '\n')
         else:
-            print('데이터 부족으로 예측 불가', '\n')
+            upload_df = pd.DataFrame(index=range(7), columns=['itemid', 'dates', 'traffic'])
+            upload_df['itemid'] = itemid
+            upload_df['dates'] = [(sc_df.index[-1] + datetime.timedelta(days=i)).strftime('%y%m%d') for i in range(7)]
             upload_df['traffic'] = 0
-        # upload_df.to_csv('C:/Users/User/Desktop/upload_df.csv', index=False)
+            print('데이터 부족으로 예측 불가', '\n')
         zabbix.delete_db(itemid)
         zabbix.insert_db(upload_df)
-
-
-    ###### 스레드 테스트 ######
-    # itemid = " "
-    # db에서 읽어온 date값의 앞 7자리 ("YYYY-MM")
-    date_starts = date_start[:7]
-    date_ends = date_end[:7]
-
-    # string을 datetime으로 바꿔주기
-    start_date = datetime.datetime.strptime(date_starts, '%Y-%m')
-    end_date = datetime.datetime.strptime(date_ends, '%Y-%m')
-
-    # 월별 datetime list 생성
-    months_list = list(rrule.rrule(rrule.MONTHLY, dtstart=start_date, until=end_date))
-
-    # 'YYYY-MM' 꼴의 시작 날짜, 마지막 날짜 생성
-    start = str(months_list[0].year) + '_' + str(months_list[0].month).zfill(2)
-    end = str(months_list[-1].year) + '_' + str(months_list[-1].month).zfill(2)
-
-    # 시작 날짜와 마지막 날짜 사이의 월별 날짜 생성
-    date_list = [(str(obj.year) + '_' + str(obj.month).zfill(2)) for obj in months_list]
-
-    # 월별 날짜를 포함한 table명 list 생성
-    table = 'history_uint_'
-    table_list = [(table + date) for date in date_list]
-
-    # lock = threading.Lock()
-    # total_df = pd.DataFrame(columns=['itemid', 'datetime', 'traffic'])
-    # for table in table_list:
-    #     my_thread = threading.Thread(target=read_db_thread, args=(itemid, table,))
-    #     my_thread.start()
 
 
     # 실제 traffic 값 추출
@@ -780,7 +765,7 @@ def making_report(datetimes, line_no, date_start, date_end):
 
     ##### AI plot #####
 
-    if in_steps == 0:   # 데이터 부족 시 그림 삽입
+    if pred_len == 0:   # 데이터 부족 시 그림 삽입
         data_img_path = './images/data_lack.jpg'
         left_cm = 17.93
         left = Inches(left_cm / 2.54)  # inch = cm/2.54
